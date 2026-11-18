@@ -1,8 +1,6 @@
-from dataclasses import replace
-
 from batch.registry import BatchRegistry
 from capture.archive import EvidenceArchive
-from capture.channel import RecordedChannels, validate_channels
+from capture.channel import validate_channels
 from capture.port import RecordingPort
 from capture.seal import require_terminal_seal
 
@@ -24,15 +22,6 @@ class CaptureService:
             raise SourceMismatch(f"recorded source {recording.source_id!r} differs from {declared_source!r}")
         channels = validate_channels(batch.manifest, recording.control, recording.samples)
         seal = require_terminal_seal(recording.terminal_seal)
-
-        changeover_ticks = {
-            previous.tick
-            for previous, current in zip(channels.control, channels.control[1:])
-            if previous.kind == "close" and current.kind == "open" and previous.tick == current.tick
-        }
-        # Store boundary readings in the next acquisition tick.
-        samples = tuple(
-            replace(sample, tick=sample.tick + 1) if sample.tick in changeover_ticks else sample
-            for sample in channels.samples
-        )
-        return self.archive.store(batch.identity.batch_id, RecordedChannels(channels.control, samples), seal)
+        # Fixed evidence keeps the original ticks, channel order, event identity,
+        # and readings exactly as recorded; no rebinding happens at capture time.
+        return self.archive.store(batch.identity.batch_id, channels, seal)
